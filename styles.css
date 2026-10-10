@@ -1,0 +1,178 @@
+/* Container for our timer icon and its pop-up panel */
+.minidoro-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+}
+
+/* The main icon button - completely flat and transparent */
+.minidoro-pie-button {
+  background-color: transparent !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: var(--radius-s);
+  color: var(--icon-color);
+  opacity: var(--icon-opacity);
+  height: auto;
+  border: 0;
+  cursor: pointer;
+  box-shadow: none !important;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.minidoro-pie-button:hover {
+  opacity: 1;
+  background-color: var(--background-modifier-hover) !important;
+}
+
+.minidoro-pie-chart {
+  width: 20px;
+  height: 20px;
+  transition: transform 0.3s ease;
+  overflow: visible;
+}
+
+/* Apply rotation to the CIRCLES instead of the SVG container. 
+   This ensures the "Top" (0 degree/12 o'clock) start position is 
+   intrinsic to the geometry and won't be overridden by container animations. */
+.minidoro-progress-track,
+.minidoro-progress-circle {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+.minidoro-progress-track {
+  stroke: var(--background-modifier-border-hover);
+  opacity: 0.5;
+}
+
+.minidoro-progress-circle {
+  transition: stroke-dashoffset 0.25s linear, stroke 0.2s ease;
+  stroke-linecap: round;
+  stroke-dasharray: var(--circumference, 50.27) var(--circumference, 50.27);
+  stroke-dashoffset: calc(var(--circumference, 50.27) * (1 - var(--progress, 0)));
+}
+
+.minidoro-progress-circle.minidoro-running {
+  stroke: var(--interactive-accent);
+}
+
+.minidoro-progress-circle.minidoro-paused {
+  stroke: var(--text-muted);
+}
+
+.minidoro-progress-circle.minidoro-idle {
+  stroke: transparent;
+}
+
+/* Horizontal control panel deployed to the LEFT */
+.minidoro-control-panel {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 6px);
+  transform: translateY(-50%);
+  z-index: 1000;
+  padding: 3px 8px;
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-m);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: var(--shadow-s);
+  white-space: nowrap;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  display: none;
+  pointer-events: auto;
+}
+
+/* Invisible bridge so mouse hover doesn't break between button and panel */
+.minidoro-control-panel::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -10px;
+  width: 10px;
+  height: 100%;
+}
+
+.minidoro-control-panel.is-panel-visible {
+  display: flex;
+}
+
+/* Time display in the panel */
+.minidoro-panel-time {
+  font-family: var(--font-monospace, monospace);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: var(--radius-s);
+  transition: background-color 0.2s ease, transform 0.1s ease;
+  border: none;
+  background-color: transparent;
+  user-select: none;
+  letter-spacing: 0.5px;
+}
+
+.minidoro-panel-time:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.minidoro-panel-time:active {
+  transform: scale(0.96);
+}
+
+/* Action buttons (play/pause, reset) */
+.minidoro-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  cursor: pointer;
+  background-color: transparent;
+  border: none;
+  transition: color 0.2s ease, background-color 0.2s ease;
+  width: 22px;
+  height: 22px;
+}
+
+.minidoro-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.minidoro-btn:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.minidoro-btn:active {
+  transform: scale(0.94);
+}
+
+.minidoro-btn.is-active {
+  color: var(--interactive-accent);
+}
+
+.minidoro-pie-button:focus-visible,
+.minidoro-panel-time:focus-visible,
+.minidoro-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-contrast: high) {
+  .minidoro-progress-circle {
+    stroke-width: 4;
+  }
+  .minidoro-control-panel {
+    border-width: 2px;
+  }
+}

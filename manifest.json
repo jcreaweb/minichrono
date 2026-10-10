@@ -1,0 +1,9 @@
+{
+	"id": "minichrono",
+	"name": "Minichrono",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "A minimal stopwatch timer that unfolds to the left.",
+	"author": "Jose",
+	"isDesktopOnly": false
+}
