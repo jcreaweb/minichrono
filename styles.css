@@ -5,6 +5,8 @@
   display: inline-flex;
   align-items: center;
   user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 /* Floating icon button - draggable badge */
@@ -23,6 +25,9 @@
   width: 32px;
   cursor: grab;
   box-sizing: border-box;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
   transition: transform 0.15s ease, opacity 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 

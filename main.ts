@@ -11,7 +11,6 @@ export default class StopwatchPlugin extends Plugin {
     private pieCircleEl: SVGCircleElement | null = null;
     private panelTimeEl: HTMLButtonElement | null = null;
     private playPauseBtn: HTMLButtonElement | null = null;
-    private resetBtn: HTMLButtonElement | null = null;
     private isPanelPinned = false;
     private hideTimeout: number | null = null;
     private isDragging = false;
@@ -86,7 +85,7 @@ export default class StopwatchPlugin extends Plugin {
         }
 
         this.containerEl?.remove();
-        this.containerEl = this.controlPanelEl = this.pieCircleEl = this.panelTimeEl = this.playPauseBtn = this.resetBtn = null;
+        this.containerEl = this.controlPanelEl = this.pieCircleEl = this.panelTimeEl = this.playPauseBtn = null;
         this.timer.reset();
     }
 
@@ -205,94 +204,120 @@ export default class StopwatchPlugin extends Plugin {
         let initialY = 0;
         let hasMoved = false;
 
-        const onMouseDown = (e: MouseEvent) => {
-            if (e.button !== 0) return;
-            // Prevent drag when clicking controls inside panel
-            if (this.controlPanelEl && this.controlPanelEl.contains(e.target as Node)) {
-                return;
+        const startDrag = (clientX: number, clientY: number, target: Node): boolean => {
+            if (this.controlPanelEl && this.controlPanelEl.contains(target)) {
+                return false;
             }
-
-            startX = e.clientX;
-            startY = e.clientY;
+            startX = clientX;
+            startY = clientY;
             const rect = el.getBoundingClientRect();
             initialX = rect.left;
             initialY = rect.top;
             hasMoved = false;
+            this.isDragging = false;
+            return true;
+        };
+
+        const moveDrag = (clientX: number, clientY: number, preventDefault: () => void) => {
+            const dx = clientX - startX;
+            const dy = clientY - startY;
+
+            if (!hasMoved && Math.hypot(dx, dy) > 6) {
+                hasMoved = true;
+                this.isDragging = true;
+                el.addClass('is-dragging');
+            }
+
+            if (this.isDragging) {
+                preventDefault();
+                let newX = initialX + dx;
+                let newY = initialY + dy;
+
+                const maxX = Math.max(10, window.innerWidth - 45);
+                const maxY = Math.max(10, window.innerHeight - 45);
+                newX = Math.max(10, Math.min(newX, maxX));
+                newY = Math.max(10, Math.min(newY, maxY));
+
+                el.style.left = `${newX}px`;
+                el.style.top = `${newY}px`;
+
+                if (newX < 220) {
+                    el.addClass('deploy-right');
+                } else {
+                    el.removeClass('deploy-right');
+                }
+            }
+        };
+
+        const endDrag = () => {
+            if (this.isDragging) {
+                el.removeClass('is-dragging');
+                const finalRect = el.getBoundingClientRect();
+                this.settings.floatingPosition = { x: Math.round(finalRect.left), y: Math.round(finalRect.top) };
+                void this.saveSettings();
+
+                setTimeout(() => {
+                    this.isDragging = false;
+                }, 100);
+            } else {
+                this.isDragging = false;
+            }
+        };
+
+        // --- Mouse Events (Desktop) ---
+        const onMouseDown = (e: MouseEvent) => {
+            if (e.button !== 0) return;
+            if (!startDrag(e.clientX, e.clientY, e.target as Node)) return;
 
             const onMouseMove = (moveEvent: MouseEvent) => {
-                const dx = moveEvent.clientX - startX;
-                const dy = moveEvent.clientY - startY;
-
-                if (!hasMoved && Math.hypot(dx, dy) > 4) {
-                    hasMoved = true;
-                    this.isDragging = true;
-                    el.addClass('is-dragging');
-                }
-
-                if (this.isDragging) {
-                    moveEvent.preventDefault();
-                    let newX = initialX + dx;
-                    let newY = initialY + dy;
-
-                    const maxX = Math.max(10, window.innerWidth - 45);
-                    const maxY = Math.max(10, window.innerHeight - 45);
-                    newX = Math.max(10, Math.min(newX, maxX));
-                    newY = Math.max(10, Math.min(newY, maxY));
-
-                    el.style.left = `${newX}px`;
-                    el.style.top = `${newY}px`;
-
-                    if (newX < 220) {
-                        el.addClass('deploy-right');
-                    } else {
-                        el.removeClass('deploy-right');
-                    }
-                }
+                moveDrag(moveEvent.clientX, moveEvent.clientY, () => moveEvent.preventDefault());
             };
 
             const onMouseUp = () => {
                 document.removeEventListener('mousemove', onMouseMove);
                 document.removeEventListener('mouseup', onMouseUp);
-
-                if (this.isDragging) {
-                    el.removeClass('is-dragging');
-                    const finalRect = el.getBoundingClientRect();
-                    this.settings.floatingPosition = { x: Math.round(finalRect.left), y: Math.round(finalRect.top) };
-                    void this.saveSettings();
-
-                    // Short timeout to avoid triggering click on pieButton
-                    setTimeout(() => {
-                        this.isDragging = false;
-                    }, 80);
-                }
+                endDrag();
             };
 
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         };
 
+        // --- Touch Events (Android / iOS) ---
+        const onTouchStart = (e: TouchEvent) => {
+            if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            if (!startDrag(touch.clientX, touch.clientY, e.target as Node)) return;
+
+            const onTouchMove = (moveEvent: TouchEvent) => {
+                if (moveEvent.touches.length !== 1) return;
+                const t = moveEvent.touches[0];
+                moveDrag(t.clientX, t.clientY, () => {
+                    if (moveEvent.cancelable) {
+                        moveEvent.preventDefault();
+                    }
+                });
+            };
+
+            const onTouchEnd = () => {
+                document.removeEventListener('touchmove', onTouchMove);
+                document.removeEventListener('touchend', onTouchEnd);
+                document.removeEventListener('touchcancel', onTouchEnd);
+                endDrag();
+            };
+
+            document.addEventListener('touchmove', onTouchMove, { passive: false });
+            document.addEventListener('touchend', onTouchEnd);
+            document.addEventListener('touchcancel', onTouchEnd);
+        };
+
         el.addEventListener('mousedown', onMouseDown);
+        el.addEventListener('touchstart', onTouchStart, { passive: true });
     }
 
     private createControlPanel() {
         if (!this.containerEl) return;
         this.controlPanelEl = this.containerEl.createEl('div', { cls: 'minidoro-control-panel' });
-
-        // Time display button
-        this.panelTimeEl = this.controlPanelEl.createEl('button', {
-            cls: 'minidoro-panel-time',
-            attr: { 'title': 'Clic: Iniciar/Pausar | Clic derecho: Reiniciar' }
-        });
-        this.panelTimeEl.setText('00:00');
-        this.panelTimeEl.onclick = (e) => {
-            e.stopPropagation();
-            this.handlePlayPauseClick();
-        };
-        this.panelTimeEl.oncontextmenu = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.handleResetClick();
-        };
 
         // Play/Pause button
         this.playPauseBtn = this.controlPanelEl.createEl('button', {
@@ -305,13 +330,18 @@ export default class StopwatchPlugin extends Plugin {
             this.handlePlayPauseClick();
         };
 
-        // Reset button
-        this.resetBtn = this.controlPanelEl.createEl('button', {
-            cls: 'minidoro-btn minidoro-reset-btn',
-            attr: { 'title': 'Reiniciar (00:00)' }
+        // Time display button (Click: Play/Pause | Long-press / Right-click: Reset)
+        this.panelTimeEl = this.controlPanelEl.createEl('button', {
+            cls: 'minidoro-panel-time',
+            attr: { 'title': 'Clic: Iniciar/Pausar | Mantener pulsado (o clic derecho): Reiniciar' }
         });
-        setIcon(this.resetBtn, 'rotate-ccw');
-        this.resetBtn.onclick = (e) => {
+        this.panelTimeEl.setText('00:00');
+        this.panelTimeEl.onclick = (e) => {
+            e.stopPropagation();
+            this.handlePlayPauseClick();
+        };
+        this.panelTimeEl.oncontextmenu = (e) => {
+            e.preventDefault();
             e.stopPropagation();
             this.handleResetClick();
         };
