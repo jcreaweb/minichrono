@@ -1,31 +1,41 @@
-/* Container for our timer icon and its pop-up panel */
+/* Floating widget container (fixed to viewport, never scrolls) */
 .minidoro-container {
-  position: relative;
+  position: fixed;
+  z-index: 9999;
   display: inline-flex;
   align-items: center;
-  margin-right: 6px;
+  user-select: none;
 }
 
-/* The main icon button - completely flat and transparent */
+/* Floating icon button - draggable badge */
 .minidoro-pie-button {
-  background-color: transparent !important;
+  background-color: var(--background-secondary) !important;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
-  border-radius: var(--radius-s);
+  padding: 5px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: var(--shadow-s);
   color: var(--icon-color);
-  opacity: var(--icon-opacity);
-  height: auto;
-  border: 0;
-  cursor: pointer;
-  box-shadow: none !important;
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  opacity: 0.95;
+  height: 32px;
+  width: 32px;
+  cursor: grab;
+  box-sizing: border-box;
+  transition: transform 0.15s ease, opacity 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.minidoro-container.is-dragging .minidoro-pie-button {
+  cursor: grabbing !important;
+  box-shadow: var(--shadow-l) !important;
+  transform: scale(1.08);
 }
 
 .minidoro-pie-button:hover {
   opacity: 1;
   background-color: var(--background-modifier-hover) !important;
+  box-shadow: var(--shadow-m);
 }
 
 .minidoro-pie-chart {
@@ -35,9 +45,7 @@
   overflow: visible;
 }
 
-/* Apply rotation to the CIRCLES instead of the SVG container. 
-   This ensures the "Top" (0 degree/12 o'clock) start position is 
-   intrinsic to the geometry and won't be overridden by container animations. */
+/* Circles rotation for 12 o'clock start */
 .minidoro-progress-track,
 .minidoro-progress-circle {
   transform: rotate(-90deg);
@@ -74,7 +82,7 @@
   top: 50%;
   right: calc(100% + 6px);
   transform: translateY(-50%);
-  z-index: 1000;
+  z-index: 10000;
   padding: 3px 8px;
   background-color: var(--background-secondary);
   border-radius: var(--radius-m);
@@ -97,6 +105,17 @@
   right: -10px;
   width: 10px;
   height: 100%;
+}
+
+/* If dragged close to the left screen edge, deploy to the RIGHT instead */
+.minidoro-container.deploy-right .minidoro-control-panel {
+  right: auto;
+  left: calc(100% + 6px);
+}
+
+.minidoro-container.deploy-right .minidoro-control-panel::after {
+  right: auto;
+  left: -10px;
 }
 
 .minidoro-control-panel.is-panel-visible {

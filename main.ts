@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, WorkspaceLeaf, addIcon, setIcon } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, addIcon, setIcon } from 'obsidian';
 import { StopwatchTimer, StopwatchState, StopwatchSettings, DEFAULT_SETTINGS } from './StopwatchTimer';
 
 export default class StopwatchPlugin extends Plugin {
@@ -14,6 +14,7 @@ export default class StopwatchPlugin extends Plugin {
     private resetBtn: HTMLButtonElement | null = null;
     private isPanelPinned = false;
     private hideTimeout: number | null = null;
+    private isDragging = false;
 
     async onload() {
         await this.loadSettings();
@@ -52,13 +53,29 @@ export default class StopwatchPlugin extends Plugin {
             }
         });
 
-        // Register active leaf change event
-        this.registerEvent(this.app.workspace.on('active-leaf-change', (leaf) => this.refreshHeaderButton(leaf)));
-        this.app.workspace.onLayoutReady(() => this.refreshHeaderButton());
+        this.addCommand({
+            id: 'reset-position-stopwatch',
+            name: 'Restablecer posición del cronómetro',
+            callback: () => {
+                this.resetWidgetPosition();
+            }
+        });
 
-        // Register DOM event for document click to ensure cleanup of pinned panel
+        // Initialize floating widget once layout is ready
+        this.app.workspace.onLayoutReady(() => {
+            this.createFloatingWidget();
+        });
+
+        // Register DOM event for document click to unpin panel
         this.registerDomEvent(document, 'click', (event: MouseEvent) => {
             this.handleDocumentClick(event);
+        });
+
+        // Reposition on window resize if off-screen
+        this.registerDomEvent(window, 'resize', () => {
+            if (this.containerEl) {
+                this.clampWidgetPosition(this.containerEl);
+            }
         });
     }
 
@@ -68,7 +85,8 @@ export default class StopwatchPlugin extends Plugin {
             this.hideTimeout = null;
         }
 
-        this.removeHeaderButton();
+        this.containerEl?.remove();
+        this.containerEl = this.controlPanelEl = this.pieCircleEl = this.panelTimeEl = this.playPauseBtn = this.resetBtn = null;
         this.timer.reset();
     }
 
@@ -81,33 +99,39 @@ export default class StopwatchPlugin extends Plugin {
         this.timer.updateSettings(this.settings);
     }
 
-    private refreshHeaderButton(leaf: WorkspaceLeaf | null = null) {
-        this.removeHeaderButton();
-
-        const targetLeaf = leaf || this.app.workspace.getLeaf(false);
-        if (!targetLeaf) return;
-
-        setTimeout(() => {
-            if (!targetLeaf.view) return;
-
-            const actionsContainer = targetLeaf.view.containerEl.querySelector('.view-actions');
-            if (actionsContainer && !actionsContainer.querySelector('.minidoro-container')) {
-                this.createHeaderButton(actionsContainer);
-                this.updateUI(this.timer.getElapsedSeconds(), 0);
-            }
-        }, 0);
+    public resetWidgetPosition() {
+        this.settings.floatingPosition = null;
+        void this.saveSettings();
+        if (this.containerEl) {
+            this.applyInitialPosition(this.containerEl);
+        }
+        new Notice('Posición del cronómetro restablecida');
     }
 
-    private createHeaderButton(parent: Element) {
-        this.containerEl = parent.createEl('div', { cls: 'minidoro-container' });
+    private createFloatingWidget() {
+        if (this.containerEl) return;
 
-        // Event Listeners for Hover
-        this.containerEl.addEventListener('mouseenter', this.showPanel);
-        this.containerEl.addEventListener('mouseleave', this.hidePanel);
+        // Mount directly to document.body so it is completely fixed to viewport and never scrolls
+        this.containerEl = document.body.createEl('div', { cls: 'minidoro-container' });
 
+        this.applyInitialPosition(this.containerEl);
+        this.initDraggable(this.containerEl);
+
+        // Hover listeners
+        this.containerEl.addEventListener('mouseenter', () => {
+            if (!this.isDragging) this.showPanel();
+        });
+        this.containerEl.addEventListener('mouseleave', () => {
+            if (!this.isDragging) this.hidePanel();
+        });
+
+        // Main button
         const pieButton = this.containerEl.createEl('button', { cls: 'minidoro-pie-button' });
-        pieButton.setAttribute('aria-label', 'Minidoro cronómetro');
+        pieButton.setAttribute('aria-label', 'Minichrono (Arrastra para mover | Clic para fijar)');
+        pieButton.setAttribute('title', 'Arrastra para mover | Clic para fijar panel');
+
         pieButton.onclick = (event) => {
+            if (this.isDragging) return;
             event.stopPropagation();
             this.isPanelPinned = !this.isPanelPinned;
             if (this.isPanelPinned) {
@@ -117,22 +141,144 @@ export default class StopwatchPlugin extends Plugin {
             }
         };
 
-        // Custom icon SVG
+        // Icon SVG
         setIcon(pieButton, 'minidoro-timer');
 
-        // Reference to progress circle SVG element
+        // Reference to progress circle SVG
         this.pieCircleEl = pieButton.querySelector('.minidoro-progress-circle');
 
-        parent.prepend(this.containerEl);
-
         this.createControlPanel();
+        this.updateUI(this.timer.getElapsedSeconds(), 0);
+    }
+
+    private applyInitialPosition(el: HTMLElement) {
+        let x: number;
+        let y: number;
+
+        if (this.settings.floatingPosition) {
+            x = this.settings.floatingPosition.x;
+            y = this.settings.floatingPosition.y;
+        } else {
+            // Default: Top-right corner of workspace, below ribbon header
+            x = window.innerWidth - 65;
+            y = 70;
+        }
+
+        const maxX = Math.max(10, window.innerWidth - 50);
+        const maxY = Math.max(10, window.innerHeight - 50);
+        x = Math.max(10, Math.min(x, maxX));
+        y = Math.max(10, Math.min(y, maxY));
+
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+
+        if (x < 220) {
+            el.addClass('deploy-right');
+        } else {
+            el.removeClass('deploy-right');
+        }
+    }
+
+    private clampWidgetPosition(el: HTMLElement) {
+        const rect = el.getBoundingClientRect();
+        const maxX = Math.max(10, window.innerWidth - rect.width - 10);
+        const maxY = Math.max(10, window.innerHeight - rect.height - 10);
+        const newX = Math.max(10, Math.min(rect.left, maxX));
+        const newY = Math.max(10, Math.min(rect.top, maxY));
+
+        el.style.left = `${newX}px`;
+        el.style.top = `${newY}px`;
+
+        if (newX < 220) {
+            el.addClass('deploy-right');
+        } else {
+            el.removeClass('deploy-right');
+        }
+    }
+
+    private initDraggable(el: HTMLElement) {
+        let startX = 0;
+        let startY = 0;
+        let initialX = 0;
+        let initialY = 0;
+        let hasMoved = false;
+
+        const onMouseDown = (e: MouseEvent) => {
+            if (e.button !== 0) return;
+            // Prevent drag when clicking controls inside panel
+            if (this.controlPanelEl && this.controlPanelEl.contains(e.target as Node)) {
+                return;
+            }
+
+            startX = e.clientX;
+            startY = e.clientY;
+            const rect = el.getBoundingClientRect();
+            initialX = rect.left;
+            initialY = rect.top;
+            hasMoved = false;
+
+            const onMouseMove = (moveEvent: MouseEvent) => {
+                const dx = moveEvent.clientX - startX;
+                const dy = moveEvent.clientY - startY;
+
+                if (!hasMoved && Math.hypot(dx, dy) > 4) {
+                    hasMoved = true;
+                    this.isDragging = true;
+                    el.addClass('is-dragging');
+                }
+
+                if (this.isDragging) {
+                    moveEvent.preventDefault();
+                    let newX = initialX + dx;
+                    let newY = initialY + dy;
+
+                    const maxX = Math.max(10, window.innerWidth - 45);
+                    const maxY = Math.max(10, window.innerHeight - 45);
+                    newX = Math.max(10, Math.min(newX, maxX));
+                    newY = Math.max(10, Math.min(newY, maxY));
+
+                    el.style.left = `${newX}px`;
+                    el.style.top = `${newY}px`;
+
+                    if (newX < 220) {
+                        el.addClass('deploy-right');
+                    } else {
+                        el.removeClass('deploy-right');
+                    }
+                }
+            };
+
+            const onMouseUp = () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+
+                if (this.isDragging) {
+                    el.removeClass('is-dragging');
+                    const finalRect = el.getBoundingClientRect();
+                    this.settings.floatingPosition = { x: Math.round(finalRect.left), y: Math.round(finalRect.top) };
+                    void this.saveSettings();
+
+                    // Short timeout to avoid triggering click on pieButton
+                    setTimeout(() => {
+                        this.isDragging = false;
+                    }, 80);
+                }
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        };
+
+        el.addEventListener('mousedown', onMouseDown);
     }
 
     private createControlPanel() {
         if (!this.containerEl) return;
         this.controlPanelEl = this.containerEl.createEl('div', { cls: 'minidoro-control-panel' });
 
-        // Time display button (Click to start/pause, right-click to reset)
+        // Time display button
         this.panelTimeEl = this.controlPanelEl.createEl('button', {
             cls: 'minidoro-panel-time',
             attr: { 'title': 'Clic: Iniciar/Pausar | Clic derecho: Reiniciar' }
@@ -171,17 +317,6 @@ export default class StopwatchPlugin extends Plugin {
         };
     }
 
-    private removeHeaderButton() {
-        if (this.hideTimeout !== null) {
-            clearTimeout(this.hideTimeout);
-            this.hideTimeout = null;
-        }
-
-        this.containerEl?.remove();
-        this.containerEl = this.controlPanelEl = this.pieCircleEl = this.panelTimeEl = this.playPauseBtn = this.resetBtn = null;
-        this.isPanelPinned = false;
-    }
-
     private showPanel = () => {
         if (this.hideTimeout !== null) {
             clearTimeout(this.hideTimeout);
@@ -191,7 +326,7 @@ export default class StopwatchPlugin extends Plugin {
     };
 
     private hidePanel = () => {
-        if (!this.isPanelPinned) {
+        if (!this.isPanelPinned && !this.isDragging) {
             this.hideTimeout = window.setTimeout(() => {
                 this.controlPanelEl?.removeClass('is-panel-visible');
                 this.hideTimeout = null;
@@ -217,7 +352,6 @@ export default class StopwatchPlugin extends Plugin {
 
         const state = this.timer.getState();
 
-        // Update classes
         this.pieCircleEl.removeClass('minidoro-running', 'minidoro-paused', 'minidoro-idle');
 
         if (state === StopwatchState.Running) {
@@ -228,17 +362,14 @@ export default class StopwatchPlugin extends Plugin {
             this.pieCircleEl.addClass('minidoro-idle');
         }
 
-        // Circular progress (segundero 60s)
         const radius = this.pieCircleEl.r?.baseVal?.value || 8;
         const circumference = 2 * Math.PI * radius;
 
         this.pieCircleEl.style.setProperty('--progress', progress.toString());
         this.pieCircleEl.style.setProperty('--circumference', circumference.toString());
 
-        // Update display text
         this.panelTimeEl.setText(this.formatTime(elapsedSeconds));
 
-        // Update play/pause icon
         if (this.playPauseBtn) {
             this.playPauseBtn.empty();
             if (state === StopwatchState.Running) {
@@ -294,10 +425,19 @@ class StopwatchSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'Configuración de Minidoro Cronómetro' });
+        containerEl.createEl('h2', { text: 'Configuración de Minichrono' });
 
         new Setting(containerEl)
-            .setName('Atajos y controles')
-            .setDesc('Puedes desplegar el cronómetro pasando el ratón sobre su icono o haciendo clic para fijarlo. También puedes asignar atajos de teclado desde Preferencias > Combinaciones de teclas para Iniciar/Pausar o Reiniciar.');
+            .setName('Restablecer posición')
+            .setDesc('Devuelve el widget flotante a su posición inicial en la esquina superior derecha.')
+            .addButton(btn => btn
+                .setButtonText('Restablecer posición')
+                .onClick(() => {
+                    this.plugin.resetWidgetPosition();
+                }));
+
+        new Setting(containerEl)
+            .setName('Interacción')
+            .setDesc('Puedes arrastrar el widget con el ratón a cualquier lugar de la ventana. Nunca se moverá con el scroll de tus notas.');
     }
 }

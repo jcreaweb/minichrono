@@ -8,10 +8,12 @@ export enum StopwatchState {
 
 export interface StopwatchSettings {
     showInStatusBar: boolean;
+    floatingPosition: { x: number; y: number } | null;
 }
 
 export const DEFAULT_SETTINGS: StopwatchSettings = {
-    showInStatusBar: false
+    showInStatusBar: false,
+    floatingPosition: null
 };
 
 export class StopwatchTimer {
